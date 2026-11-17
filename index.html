@@ -497,8 +497,11 @@ body.modal-open { overflow: hidden; }
   .brand { font-size: 1rem; }
   .tab { font-size: 1.05rem; padding: 5px 14px; }
 }
+@media (max-width: 700px) {
+  .nav ul li:nth-child(1), .nav ul li:nth-child(4) { display: none; }
+}
 @media (max-width: 520px) {
-  .nav ul li:nth-child(1), .nav ul li:nth-child(3) { display: none; }
+  .nav ul li:nth-child(3) { display: none; }
 }
 .data-note { margin: 18px 0 0; padding: 10px 14px; border-left: 3px solid var(--yellow); background: rgba(255,255,0,0.07); border-radius: 6px; color: #e6e6ee; font-size: 0.95rem; }
 .data-note[hidden] { display: none; }
@@ -519,6 +522,25 @@ body.modal-open { overflow: hidden; }
 /* Rule cards: shrink the big word to fit instead of breaking it across lines */
 .rule { container-type: inline-size; }
 .rule .big { font-size: min(3rem, 13cqw); overflow-wrap: normal; word-break: normal; white-space: nowrap; }
+
+/* ---------- Highscore ---------- */
+.hs {
+  margin-top: 30px; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: clamp(20px, 4vw, 52px);
+  padding: clamp(22px, 4vw, 38px); border: 2px solid transparent; border-radius: 18px;
+  background: linear-gradient(var(--panel), var(--panel)) padding-box, linear-gradient(90deg, var(--magenta), var(--yellow)) border-box;
+  box-shadow: -10px 0 34px rgba(255,0,160,0.25), 10px 0 34px rgba(255,255,0,0.2);
+}
+.hs.empty { grid-template-columns: 1fr; }
+.hs-score { font-family: var(--display); font-weight: 900; font-style: italic; line-height: 0.85; font-size: clamp(5.4rem, 16vw, 9.5rem); color: var(--yellow); text-shadow: 0 0 28px rgba(255,255,0,0.55); white-space: nowrap; }
+.hs-score small { font-size: 0.26em; letter-spacing: 0.1em; margin-left: 0.2em; color: var(--white); text-shadow: none; }
+.hs-kicker { font-family: var(--display); font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; font-size: 0.95rem; color: var(--magenta); }
+.hs-name { margin-top: 4px; font-family: var(--display); font-weight: 900; font-style: italic; text-transform: uppercase; font-size: clamp(2rem, 5.4vw, 3.6rem); line-height: 1; overflow-wrap: anywhere; }
+.hs-meter { margin-top: 20px; height: 14px; border-radius: 999px; background: #0a0a0d; border: 1px solid rgba(255,255,255,0.22); overflow: hidden; }
+.hs-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--magenta), var(--yellow)); box-shadow: 0 0 14px rgba(255,0,160,0.6); }
+.hs-scale { display: flex; justify-content: space-between; margin-top: 6px; font-size: 0.88rem; color: var(--muted); }
+.hs-sub { margin-top: 12px; color: var(--muted); font-size: 0.98rem; }
+.hs-edit { margin-top: 14px; }
+@media (max-width: 640px) { .hs { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -530,6 +552,7 @@ body.modal-open { overflow: hidden; }
       <ul>
         <li><a href="#rules" data-go="rules">Rules</a></li>
         <li><a href="#bracket" data-go="bracket">Bracket</a></li>
+        <li><a href="#highscore" data-go="highscore">Highscore</a></li>
         <li><a href="#scoring" data-go="scoring">Scoring</a></li>
         <li>
           <button class="adm" id="adminBtn" type="button" aria-pressed="false">
@@ -587,6 +610,14 @@ body.modal-open { overflow: hidden; }
     </div>
     <div class="bracket-fit" id="bracketFit">
       <div class="bracket" id="bracketTree"></div>
+    </div>
+  </section>
+
+  <section id="highscore">
+    <div class="wrap">
+      <span class="eyebrow y">Side challenge</span>
+      <h2>Highscore</h2>
+      <div class="hs" id="hsCard"></div>
     </div>
   </section>
 
@@ -657,6 +688,7 @@ body.modal-open { overflow: hidden; }
       "Bb1": "Kristina Murray", "Bb2": "Pernilla Wikman"
     },
     "res": {},
+    "highscore": { "name": "Tobias Håkansson", "score": 138 },
     "rules": [
       { "kicker": "Game format", "big": "501 · 1v1", "text": "Classic 501, one player against one player." },
       { "kicker": "Booking", "big": "Slack", "text": "Reach out to your opponent and schedule your game in the dedicated Slack channel." },
@@ -966,7 +998,7 @@ body.modal-open { overflow: hidden; }
   }
 
   function renderAll() {
-    renderTabs(); renderHero(); renderRules(); renderBracket(); renderAdmin(); renderNote();
+    renderTabs(); renderHero(); renderRules(); renderBracket(); renderHighscore(); renderAdmin(); renderNote();
   }
 
   /* ---------- Fit the bracket to the page width ---------- */
@@ -1260,6 +1292,64 @@ body.modal-open { overflow: hidden; }
     });
   }
 
+  /* ---------- Highscore: best 3-dart visit, a side challenge separate from the bracket ---------- */
+  function hsOf(t) {
+    var h = t.highscore;
+    if (h === undefined && t.id === '2026') { h = DEFAULT_2026.highscore; }
+    if (!h || !h.name) { return null; }
+    var sc = parseInt(h.score, 10);
+    if (isNaN(sc)) { return null; }
+    return { name: String(h.name), score: Math.max(0, Math.min(180, sc)) };
+  }
+
+  function renderHighscore() {
+    var t = cur(), h = hsOf(t), el = $('#hsCard');
+    var edit = editingNow() ? '<div class="hs-edit"><button class="btn ghost sm" type="button" data-act="hs">Edit highscore</button></div>' : '';
+    if (!h) {
+      el.className = 'hs empty';
+      el.innerHTML = '<div><div class="hs-kicker">Record holder</div><div class="hs-name">No highscore yet</div>' +
+        '<p class="hs-sub">Nobody has set a three-dart highscore for this tournament.</p></div>' + edit;
+      return;
+    }
+    el.className = 'hs';
+    el.innerHTML = '<div class="hs-score" aria-label="' + h.score + ' points">' + h.score + '<small>pts</small></div>' +
+      '<div class="hs-info"><div class="hs-kicker">Highscore with three darts</div>' +
+      '<div class="hs-name">' + esc(h.name) + '</div>' +
+      '<div class="hs-meter" role="img" aria-label="' + h.score + ' of a possible 180"><div class="hs-fill" style="width:' + (h.score / 180 * 100).toFixed(1) + '%"></div></div>' +
+      '<div class="hs-scale"><span>0</span><span>180 is the maximum</span></div>' +
+      '<p class="hs-sub">A side challenge, separate from the bracket.</p>' + edit + '</div>';
+  }
+
+  function hsFields(t) {
+    var h = hsOf(t) || { name: '', score: '' };
+    return '<div class="rule-ed"><h4>Highscore (three darts)</h4><div class="two">' +
+      field('hsName', 'Record holder', h.name, { max: 40 }) +
+      field('hsScore', 'Score (0 to 180)', h.score, { type: 'number', min: 0, maxn: 180, hint: 'Leave both empty to clear it. This is separate from the bracket.' }) + '</div></div>';
+  }
+  function readHs(a) {
+    var name = $('#hsName', a.el).value.trim(), raw = $('#hsScore', a.el).value.trim();
+    if (!name && !raw) { return { value: null }; }
+    var sc = parseInt(raw, 10);
+    if (!name) { return { error: 'Add the name of the record holder, or clear the score.' }; }
+    if (isNaN(sc) || sc < 0 || sc > 180 || String(sc) !== raw) { return { error: 'The highscore must be a whole number from 0 to 180.' }; }
+    return { value: { name: name, score: sc } };
+  }
+
+  function openHighscore() {
+    var t = cur();
+    var html = hsFields(t).replace('<div class="rule-ed"><h4>Highscore (three darts)</h4>', '<div>') + '<p class="form-err" role="alert" hidden></p>';
+    openModal('Highscore', html, [
+      { label: 'Cancel', cls: 'ghost' },
+      {
+        label: 'Save', onClick: function (a) {
+          var r = readHs(a);
+          if (r.error) { a.error(r.error); return false; }
+          var t2 = clone(t); t2.highscore = r.value; commit(t2);
+        }
+      }
+    ]);
+  }
+
   function openSettings() {
     var t = cur();
     var rules = (t.rules && t.rules.length ? t.rules : DEFAULT_2026.rules);
@@ -1275,6 +1365,7 @@ body.modal-open { overflow: hidden; }
       '<div class="two">' + field('sT1', 'Title line 1', t.title1 || '', { max: 40 }) + field('sT2', 'Title line 2', t.title2 || '', { max: 40 }) + '</div>' +
       field('sSub', 'Subtitle', t.subtitle || '', { max: 100 }) +
       field('sIntro', 'Intro text', t.intro || '', { area: true, rows: 4, max: 600 }) +
+      hsFields(t) +
       rh +
       '<p class="muted-p">' + esc(t.playerCount) + ' players in a ' + nextPow2(t.playerCount) + '-slot bracket. To change the player count, create a new tournament.</p>' +
       '<p class="form-err" role="alert" hidden></p>';
@@ -1293,6 +1384,9 @@ body.modal-open { overflow: hidden; }
         label: 'Save', onClick: function (a) {
           var t2 = clone(t), label = $('#sLabel', a.el).value.trim();
           if (!label) { a.error('Give the tab a name.'); return false; }
+          var hs = readHs(a);
+          if (hs.error) { a.error(hs.error); return false; }
+          t2.highscore = hs.value;
           t2.label = label;
           var y = parseInt(label, 10);
           if (!isNaN(y)) { t2.order = y; }
@@ -1478,6 +1572,11 @@ body.modal-open { overflow: hidden; }
     else if (act === 'new') { openNew(); }
     else if (act === 'restore') { restoreDefault(); }
     else if (act === 'signout') { signOut(); }
+  });
+
+  $('#hsCard').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (b && b.getAttribute('data-act') === 'hs' && editingNow()) { openHighscore(); }
   });
 
   tree.addEventListener('click', function (e) {
