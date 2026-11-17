@@ -509,6 +509,13 @@ body.modal-open { overflow: hidden; }
   width: 100%; background: #0a0a0d; color: var(--white); border: 1.5px solid rgba(255,255,255,0.25); border-radius: 9px; padding: 9px 12px; font: 500 1rem var(--body);
 }
 .modal input[type=email]:focus, .modal input[type=password]:focus { outline: none; border-color: var(--yellow); box-shadow: 0 0 12px rgba(255,255,0,0.3); }
+.pl-h { margin: 6px 0 0; font-family: var(--display); font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--magenta); font-size: 1rem; }
+.pl-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+@media (max-width: 520px) { .pl-list { grid-template-columns: 1fr; } }
+.pl-row { display: grid; gap: 4px; }
+.pl-row label { font-family: var(--display); font-weight: 700; font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.pl-row input { width: 100%; background: #0a0a0d; color: var(--white); border: 1.5px solid rgba(255,255,255,0.25); border-radius: 9px; padding: 8px 11px; font: 500 0.95rem var(--body); }
+.pl-row input:focus { outline: none; border-color: var(--yellow); box-shadow: 0 0 12px rgba(255,255,0,0.3); }
 </style>
 </head>
 <body>
@@ -947,8 +954,9 @@ body.modal-open { overflow: hidden; }
         '<button class="btn ghost sm" type="button" data-act="done">Done</button>';
       return;
     }
-    bar.innerHTML = '<span class="admin-note"><b>Edit mode.</b> Click a match to change names, pick a winner or add a score. Drag a player onto another player to swap them.</span>' +
-      '<span class="admin-btns"><button class="btn ghost sm" type="button" data-act="settings">Tournament settings</button>' +
+    bar.innerHTML = '<span class="admin-note"><b>Edit mode.</b> Click a name to edit it, or click a match to pick a winner or add a score. Drag a player onto another player to swap them.</span>' +
+      '<span class="admin-btns"><button class="btn sm" type="button" data-act="players">Edit players</button>' +
+      '<button class="btn ghost sm" type="button" data-act="settings">Tournament settings</button>' +
       '<button class="btn ghost sm" type="button" data-act="new">New tournament</button>' +
       '<button class="btn sm" type="button" data-act="done">Done</button>' +
       '<button class="btn ghost sm" type="button" data-act="signout">Sign out</button></span>';
@@ -1096,7 +1104,7 @@ body.modal-open { overflow: hidden; }
     toast('Swapped ' + (x || 'open slot') + ' and ' + (y || 'open slot') + '.');
   }
 
-  function openMatch(id) {
+  function openMatch(id, focusKey) {
     var t = cur(), c = compute(t), m = c.matches[id], M = c.model;
     if (!m) { return; }
     var draft = clone(t.names || {});
@@ -1181,6 +1189,72 @@ body.modal-open { overflow: hidden; }
     });
     if (m.w) { $('input[name=mw][value=' + m.w + ']', el).checked = true; }
     refreshLabels();
+    if (focusKey) {
+      setTimeout(function () {
+        ['a', 'b'].forEach(function (k) {
+          if (m[k].slot === focusKey) { var inp = $('#mn-' + k, el); if (inp) { inp.focus(); inp.select(); } }
+        });
+      }, 80);
+    }
+  }
+
+  function openPlayers() {
+    var t = cur(), M = makeModel(t.playerCount), names = t.names || {}, confirmed = false;
+    var rows = '';
+    ['A', 'B'].forEach(function (L) {
+      rows += '<h4 class="pl-h">' + (L === 'A' ? 'Left bracket' : 'Right bracket') + '</h4><div class="pl-list">';
+      M.entryList.forEach(function (e) {
+        if (e.key.charAt(0) !== L) { return; }
+        var isBye = /^[AB]b\d+$/.test(e.key);
+        var lab = isBye ? ('Bye, plays ' + (e.mid || '')) : (e.mid + ' · Player ' + (e.key.slice(-1) === 'a' ? 'A' : 'B'));
+        rows += '<div class="pl-row"><label for="pn-' + e.key + '">' + esc(lab) + '</label>' +
+          '<input id="pn-' + e.key + '" data-key="' + e.key + '" type="text" maxlength="40" value="' + esc(names[e.key] || '') + '" placeholder="Player name"></div>';
+      });
+      rows += '</div>';
+    });
+    var html = '<p class="muted-p">Type a name in each slot. Leave a slot empty if the player is not decided yet. Changing a name clears results that depended on it.</p>' +
+      '<div class="two">' + field('pCount', 'Number of players', t.playerCount, { type: 'number', min: 4, maxn: 64, hint: 'Change this to add or remove players. The bracket is rebuilt and results are cleared.' }) + '</div>' +
+      rows +
+      '<div class="fld"><label for="pPaste">Paste a list</label><textarea id="pPaste" rows="4" placeholder="One name per line. They fill the slots above in order."></textarea>' +
+      '<div><button class="btn ghost sm" type="button" id="pFill">Fill slots from list</button></div></div>' +
+      '<p class="form-err" role="alert" hidden></p>';
+    var api = openModal('Edit players', html, [
+      { label: 'Cancel', cls: 'ghost' },
+      {
+        label: 'Save players', keep: true, onClick: function (a) {
+          var N = parseInt($('#pCount', a.el).value, 10);
+          if (isNaN(N) || N < 4 || N > 64) { a.error('Players must be between 4 and 64.'); return false; }
+          var typed = {};
+          M.entryList.forEach(function (e) { typed[e.key] = $('#pn-' + e.key, a.el).value.trim(); });
+          var t2 = clone(t);
+          if (N !== t.playerCount) {
+            var list = M.entryList.map(function (e) { return typed[e.key]; }).filter(Boolean);
+            if (list.length > N) { a.error('You have ' + list.length + ' names but only ' + N + ' places. Remove names or raise the player count.'); return false; }
+            if (!confirmed && Object.keys(t.res || {}).length) {
+              confirmed = true;
+              a.error('Changing the player count rebuilds the bracket and clears all results. Press Save players again to confirm.');
+              return false;
+            }
+            var M2 = makeModel(N), nn = {};
+            M2.entryList.forEach(function (e, i) { if (list[i]) { nn[e.key] = list[i]; } });
+            t2.playerCount = N; t2.names = nn; t2.res = {};
+          } else {
+            var nm = {};
+            M.entryList.forEach(function (e) { if (typed[e.key]) { nm[e.key] = typed[e.key]; } });
+            t2.names = nm;
+          }
+          commit(t2);
+          a.close();
+          toast('Players saved.');
+        }
+      }
+    ]);
+    $('#pFill', api.el).addEventListener('click', function () {
+      var lines = $('#pPaste', api.el).value.split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean);
+      var inputs = $$('input[data-key]', api.el);
+      lines.forEach(function (ln, i) { if (inputs[i]) { inputs[i].value = ln; } });
+      api.error(lines.length > inputs.length ? 'The list has more names than slots. The extra names were not used.' : '');
+    });
   }
 
   function openSettings() {
@@ -1396,6 +1470,7 @@ body.modal-open { overflow: hidden; }
     if (!b) { return; }
     var act = b.getAttribute('data-act');
     if (act === 'done') { state.editing = false; renderAll(); }
+    else if (act === 'players') { openPlayers(); }
     else if (act === 'settings') { openSettings(); }
     else if (act === 'new') { openNew(); }
     else if (act === 'restore') { restoreDefault(); }
@@ -1405,7 +1480,8 @@ body.modal-open { overflow: hidden; }
   tree.addEventListener('click', function (e) {
     if (!editingNow()) { return; }
     var m = e.target.closest('.match, .final, .bronze');
-    if (m) { openMatch(m.getAttribute('data-id')); }
+    var pl = e.target.closest('.player[data-slot]');
+    if (m) { openMatch(m.getAttribute('data-id'), pl ? pl.getAttribute('data-slot') : null); }
   });
   tree.addEventListener('keydown', function (e) {
     if (!editingNow() || (e.key !== 'Enter' && e.key !== ' ')) { return; }
