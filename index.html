@@ -516,6 +516,9 @@ body.modal-open { overflow: hidden; }
 .pl-row label { font-family: var(--display); font-weight: 700; font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
 .pl-row input { width: 100%; background: #0a0a0d; color: var(--white); border: 1.5px solid rgba(255,255,255,0.25); border-radius: 9px; padding: 8px 11px; font: 500 0.95rem var(--body); }
 .pl-row input:focus { outline: none; border-color: var(--yellow); box-shadow: 0 0 12px rgba(255,255,0,0.3); }
+/* Rule cards: shrink the big word to fit instead of breaking it across lines */
+.rule { container-type: inline-size; }
+.rule .big { font-size: min(3rem, 13cqw); overflow-wrap: normal; word-break: normal; white-space: nowrap; }
 </style>
 </head>
 <body>
