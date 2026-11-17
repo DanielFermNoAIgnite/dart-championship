@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0a">
+<title>NoA Ignite Dart Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,700;1,800;1,900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a full-screen kiosk for landscape phones, tablets and TVs. All sizes follow the screen height and width, so the same page fills a phone held sideways or a wall display. */
+:root {
+  --bg: #0a0a0a;
+  --panel: #121215;
+  --magenta: #FF00A0;
+  --yellow: #FFFF00;
+  --white: #FFFFFF;
+  --red: #FF3333;
+  --muted: #a4a4b0;
+  --display: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
+  --body: 'Barlow', 'Helvetica Neue', Arial, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+  background-size: 4.4vh 4.4vh;
+  color: var(--white); font-family: var(--body); overflow: hidden;
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+  user-select: none; -webkit-user-select: none;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; border-radius: 4px; }
+
+.app {
+  position: fixed; inset: 0; display: grid; grid-template-rows: auto auto 1fr auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* ---------- Top bar ---------- */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 2vw; padding: 1.3vh 2vw 0.9vh; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 1.4vw; min-width: 0; }
+.brand h1 {
+  margin: 0; font-family: var(--display); font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: 0.03em;
+  font-size: max(15px, 4.6vh); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.brand h1 b { color: var(--magenta); font-weight: 900; }
+.year {
+  flex: none; font-family: var(--display); font-weight: 900; font-style: italic; letter-spacing: 0.08em; font-size: max(13px, 4vh); line-height: 1;
+  color: #0a0a0a; background: var(--yellow); border: 0; border-radius: 0.8vh; padding: 0.5vh 1.1vh; box-shadow: 0 0 1.8vh rgba(255,255,0,0.45);
+}
+button.year { cursor: pointer; }
+.meta { display: flex; align-items: center; gap: 1vw; flex: none; font-size: max(10px, 2.3vh); color: var(--muted); font-variant-numeric: tabular-nums; }
+.live { display: inline-flex; align-items: center; gap: 0.6vh; font-family: var(--display); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--magenta); white-space: nowrap; }
+.live::before { content: ""; width: 1.4vh; height: 1.4vh; min-width: 6px; min-height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 1.2vh currentColor; }
+.live.off { color: var(--muted); }
+.ib {
+  display: inline-flex; align-items: center; justify-content: center; width: max(26px, 4.6vh); height: max(26px, 4.6vh);
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.22); border-radius: 1vh; cursor: pointer; padding: 0;
+}
+.ib:hover { border-color: var(--white); }
+.ib svg { width: 55%; height: 55%; }
+.progress { height: max(2px, 0.5vh); margin: 0 2vw; background: rgba(255,255,255,0.1); border-radius: 99px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--magenta), var(--yellow)); box-shadow: 0 0 1vh rgba(255,0,160,0.7); }
+.progress i.run { animation: fill var(--dur, 20000ms) linear forwards; }
+.progress.paused i { animation-play-state: paused; }
+@keyframes fill { from { width: 0; } to { width: 100%; } }
+
+/* ---------- Stage and slides ---------- */
+.stage { position: relative; overflow: hidden; min-height: 0; }
+.slide { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity 0.5s ease, visibility 0.5s; }
+.slide.on { opacity: 1; visibility: visible; }
+.dots { display: flex; justify-content: center; gap: 1.2vw; padding: 0.7vh 0 1.1vh; }
+.dots button { width: max(7px, 1.8vh); height: max(7px, 1.8vh); border-radius: 50%; border: 0; padding: 0; background: rgba(255,255,255,0.28); cursor: pointer; }
+.dots button.on { background: var(--yellow); box-shadow: 0 0 1.2vh var(--yellow); }
+
+/* ---------- Bracket ---------- */
+.bk {
+  --fs: max(7px, min(3.4vh, calc(2.5vh * 8 / var(--rows)), calc(1.12vw * 9 / var(--cols))));
+  --pad: 0.55vw; --lw: clamp(1px, 0.3vh, 3px);
+  position: absolute; inset: 0; display: flex; padding: 0 1vw 0.4vh; font-size: var(--fs);
+}
+.bk .side { display: flex; flex: var(--k) 1 0; min-width: 0; }
+.bk .side.right { flex-direction: row-reverse; }
+.bk .left { --c: var(--magenta); --cg: 255,0,160; }
+.bk .right { --c: var(--yellow); --cg: 255,255,0; }
+.bk .round { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+.bk .rt { height: calc(var(--fs) * 2.2); display: flex; align-items: center; justify-content: center; font-family: var(--display); font-weight: 800; font-style: italic; letter-spacing: 0.1em; text-transform: uppercase; font-size: calc(var(--fs) * 0.95); color: var(--c); text-shadow: 0 0 0.9vh rgba(var(--cg), 0.6); white-space: nowrap; }
+.bk .slots { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+.bk .slot { position: relative; display: flex; align-items: center; padding: 0 var(--pad); flex: var(--span, 1) 1 0; min-height: 0; }
+.bk .slot.out::after { content: ""; position: absolute; top: 50%; right: 0; width: var(--pad); height: var(--lw); margin-top: calc(var(--lw) / -2); background: var(--c); box-shadow: 0 0 0.7vh var(--c); }
+.bk .slot.top::before, .bk .slot.bottom::before { content: ""; position: absolute; right: calc(var(--lw) / -2); width: var(--lw); background: var(--c); box-shadow: 0 0 0.7vh var(--c); }
+.bk .slot.top::before { top: 50%; bottom: 0; }
+.bk .slot.bottom::before { top: 0; bottom: 50%; }
+.bk .right .slot.out::after { right: auto; left: 0; }
+.bk .right .slot.top::before, .bk .right .slot.bottom::before { right: auto; left: calc(var(--lw) / -2); }
+.bk .m {
+  position: relative; width: 100%; min-width: 0; background: #0d0d10;
+  border: var(--lw) solid var(--c); border-radius: calc(var(--fs) * 0.6);
+  box-shadow: 0 0 calc(var(--fs) * 1.1) rgba(var(--cg), 0.35), inset 0 0 calc(var(--fs) * 1.2) rgba(var(--cg), 0.07);
+  overflow: hidden;
+}
+.bk .m.in::before { content: ""; position: absolute; top: 50%; left: calc(var(--pad) * -1 - var(--lw)); width: calc(var(--pad) + var(--lw)); height: var(--lw); margin-top: calc(var(--lw) / -2); background: var(--c); }
+.bk .p { display: flex; align-items: center; gap: 0.4em; height: calc(var(--fs) * 1.85); padding: 0 0.6em; font-size: var(--fs); font-weight: 600; white-space: nowrap; }
+.bk .p + .p { border-top: 1px solid rgba(255,255,255,0.09); }
+.bk .p .n { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.bk .p.ph { color: #6f6f7b; font-style: italic; font-weight: 500; }
+.bk .p.win { background: rgba(var(--cg), 0.22); color: var(--c); font-weight: 700; }
+.bk .p.lose { opacity: 0.42; }
+.bk .sc { flex: none; font-family: var(--display); font-weight: 800; font-size: 0.95em; letter-spacing: 0.04em; color: var(--white); }
+.bk .byeb { width: 100%; text-align: center; padding: 0.5em 0.2em; border: var(--lw) dashed rgba(var(--cg), 0.6); border-radius: calc(var(--fs) * 0.6); font-family: var(--display); font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; font-size: calc(var(--fs) * 0.85); color: var(--c); background: rgba(var(--cg), 0.05); line-height: 1.2; }
+.bk .center { flex: 1.5 1 0; min-width: 0; display: flex; flex-direction: column; }
+.bk .cb { position: relative; flex: 1 1 0; min-height: 0; padding: 0 var(--pad); }
+.bk .final, .bk .bronze { position: absolute; left: var(--pad); right: var(--pad); width: auto; }
+.bk .final {
+  --c: #fff; --cg: 255,255,255; top: 50%; transform: translateY(-50%);
+  border: calc(var(--lw) * 1.3) solid transparent;
+  background: linear-gradient(#0d0d10, #0d0d10) padding-box, linear-gradient(90deg, var(--magenta), var(--yellow)) border-box;
+  box-shadow: calc(var(--fs) * -0.7) 0 calc(var(--fs) * 2) rgba(255,0,160,0.45), calc(var(--fs) * 0.7) 0 calc(var(--fs) * 2) rgba(255,255,0,0.4);
+}
+.bk .final::before, .bk .final::after { content: ""; position: absolute; top: 50%; width: calc(var(--pad) + var(--lw)); height: var(--lw); margin-top: calc(var(--lw) / -2); }
+.bk .final::before { left: calc(var(--pad) * -1 - var(--lw) * 1.3); background: var(--magenta); }
+.bk .final::after { right: calc(var(--pad) * -1 - var(--lw) * 1.3); background: var(--yellow); }
+.bk .final .p:nth-of-type(1) { color: #ff6fc6; }
+.bk .final .p:nth-of-type(2) { color: #ffff7a; }
+.bk .final .p.win { background: rgba(255,255,255,0.18); color: #fff; }
+.bk .bronze { --c: #cfcfd8; --cg: 255,255,255; top: calc(50% + var(--fs) * 4.6); border-color: rgba(255,255,255,0.35); box-shadow: 0 0 calc(var(--fs) * 0.9) rgba(255,255,255,0.12); }
+.bk .lab { height: calc(var(--fs) * 1.5); display: flex; align-items: center; justify-content: center; font-family: var(--display); font-weight: 800; letter-spacing: 0.24em; text-transform: uppercase; font-size: calc(var(--fs) * 0.85); color: var(--white); border-bottom: 1px solid rgba(255,255,255,0.18); }
+.bk .bronze .lab { color: var(--muted); }
+.bk .trophy { position: absolute; left: 50%; bottom: calc(50% + var(--fs) * 3.6); height: calc(var(--fs) * 6.2); transform: translateX(-50%); filter: drop-shadow(0 0 1.3vh rgba(255,255,0,0.55)); }
+.bk .done .trophy { filter: drop-shadow(0 0 2.4vh rgba(255,255,0,0.95)); }
+
+.bk .m { container-type: inline-size; }
+.bk .p .s { display: none; }
+@container (max-width: 11em) { .bk .p .f { display: none; } .bk .p .s { display: inline; } }
+
+/* ---------- Highscore and champion ---------- */
+.hs-wrap { position: absolute; inset: 0; display: grid; grid-template-columns: 1.3fr 1fr; gap: 2.4vw; padding: 1.8vh 3vw 1.4vh; }
+.card {
+  position: relative; min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 3vh 2.4vw;
+  border: 2px solid transparent; border-radius: 2.4vh;
+  background: linear-gradient(var(--panel), var(--panel)) padding-box, linear-gradient(90deg, var(--magenta), var(--yellow)) border-box;
+  box-shadow: -1vh 0 3.6vh rgba(255,0,160,0.25), 1vh 0 3.6vh rgba(255,255,0,0.2);
+}
+.card.alt { background: linear-gradient(var(--panel), var(--panel)) padding-box, linear-gradient(90deg, var(--yellow), var(--magenta)) border-box; }
+.k { font-family: var(--display); font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; font-size: max(10px, 3.2vh); color: var(--magenta); }
+.alt .k { color: var(--yellow); }
+.score { margin-top: 0.4vh; font-family: var(--display); font-weight: 900; font-style: italic; line-height: 0.85; font-size: min(40vh, 22vw); color: var(--yellow); text-shadow: 0 0 3.6vh rgba(255,255,0,0.55); white-space: nowrap; }
+.score small { font-size: 0.24em; margin-left: 0.18em; letter-spacing: 0.1em; color: var(--white); text-shadow: none; }
+.who { margin-top: 1vh; font-family: var(--display); font-weight: 900; font-style: italic; text-transform: uppercase; line-height: 1; font-size: min(11vh, 6.4vw); overflow-wrap: anywhere; }
+.bar { margin-top: 2.2vh; height: max(8px, 1.9vh); border-radius: 99px; background: #0a0a0d; border: 1px solid rgba(255,255,255,0.22); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--magenta), var(--yellow)); box-shadow: 0 0 1.6vh rgba(255,0,160,0.6); }
+.sub { margin-top: 1.2vh; color: var(--muted); font-size: max(10px, 3vh); line-height: 1.3; }
+.bigtxt { margin-top: 1vh; font-family: var(--display); font-weight: 900; font-style: italic; text-transform: uppercase; line-height: 0.95; font-size: min(15vh, 8.4vw); color: var(--yellow); text-shadow: 0 0 3vh rgba(255,255,0,0.5); overflow-wrap: anywhere; }
+.bigtxt small { font-size: 0.4em; color: var(--white); text-shadow: none; }
+.card .tro { position: absolute; right: 2vw; top: 2.4vh; height: 15vh; filter: drop-shadow(0 0 1.6vh rgba(255,255,0,0.7)); }
+.empty-note { text-align: center; padding: 14vh 4vw; color: var(--muted); font-family: var(--display); font-size: 5vh; letter-spacing: 0.1em; text-transform: uppercase; }
+
+
+/* ---------- Next matches ---------- */
+.nx { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 1.2vh 3vw 1vh; gap: 1.4vh; }
+.nx-h { display: flex; align-items: baseline; justify-content: space-between; gap: 2vw; }
+.nx-h .k { font-size: max(12px, 4.4vh); }
+.nx-h .sub { margin: 0; font-size: max(9px, 2.8vh); }
+.nx-grid { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: repeat(var(--c), minmax(0, 1fr)); grid-template-rows: repeat(var(--r), minmax(0, 1fr)); gap: 1.8vh 1.6vw; }
+.mc {
+  --c: var(--magenta); --cg: 255,0,160;
+  position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.2em; overflow: hidden;
+  padding: 0.5em 1em; font-size: min(5.2vh, 2.3vw, calc(15vh / var(--r)));
+  background: #0d0d10; border: 2px solid var(--c); border-radius: 0.5em;
+  box-shadow: 0 0 1.6vh rgba(var(--cg), 0.35), inset 0 0 2vh rgba(var(--cg), 0.07);
+}
+.mc.r { --c: var(--yellow); --cg: 255,255,0; }
+.mc.f { --c: #fff; --cg: 255,255,255; border-color: transparent;
+  background: linear-gradient(#0d0d10, #0d0d10) padding-box, linear-gradient(90deg, var(--magenta), var(--yellow)) border-box; }
+.mc .rl { font-family: var(--display); font-weight: 800; font-style: italic; letter-spacing: 0.16em; text-transform: uppercase; font-size: 0.62em; color: var(--c); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc .ln { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; }
+.mc.row .ln { flex-direction: row; align-items: center; gap: 0.6em; }
+.mc.row .pl { flex: 1 1 0; min-width: 0; }
+.mc.row .pl:first-child { text-align: right; }
+.mc.row { font-size: min(4.4vh, 2.1vw, calc(19vh / var(--r))); }
+.mc.row .rl { text-align: center; }
+.mc .pl { font-family: var(--display); font-weight: 800; font-style: italic; text-transform: uppercase; line-height: 1.02; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1.25em; }
+.mc .vs { font-family: var(--display); font-weight: 700; letter-spacing: 0.3em; font-size: 0.55em; color: var(--red); line-height: 1; }
+.nx-empty { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--muted); font-family: var(--display); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; font-size: 5vh; }
+
+/* Turn-your-phone hint */
+.rotate { display: none; }
+@media (orientation: portrait) and (max-width: 700px) {
+  .rotate {
+    position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 24px;
+    background: var(--bg); font-family: var(--display); font-weight: 800; font-style: italic; text-transform: uppercase; letter-spacing: 0.08em; font-size: 1.7rem;
+  }
+  .rotate svg { width: 84px; height: 84px; color: var(--yellow); filter: drop-shadow(0 0 12px rgba(255,255,0,0.6)); }
+  .rotate small { font-family: var(--body); font-style: normal; font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 1rem; color: var(--muted); }
+}
+@media (max-aspect-ratio: 4/3) and (min-width: 701px) {
+  .hs-wrap { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .slide { transition: none; } }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <h1 id="title">NoA <b>Ignite</b> Dart Championship</h1>
+      <button class="year" id="year" type="button" aria-label="Switch tournament"></button>
+    </div>
+    <div class="meta">
+      <span class="live" id="live">Live</span>
+      <span id="updated"></span>
+      <button class="ib" id="pauseBtn" type="button" aria-label="Pause rotation" title="Pause or resume (space)">
+        <svg id="pauseIcon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="0.8"/><rect x="9.5" y="2.5" width="3" height="11" rx="0.8"/></svg>
+      </button>
+      <button class="ib" id="fsBtn" type="button" aria-label="Full screen" title="Full screen (f)">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
+      </button>
+    </div>
+  </header>
+  <div class="progress" id="progress"><i id="progressBar"></i></div>
+  <main class="stage" id="stage">
+    <section class="slide on" id="s-bracket" aria-label="Bracket"></section>
+    <section class="slide" id="s-next" aria-label="Next matches"></section>
+    <section class="slide" id="s-hs" aria-label="Highscore and champion"></section>
+  </main>
+  <nav class="dots" id="dots" aria-label="Slides">
+    <button type="button" class="on" data-i="0" aria-label="Bracket"></button>
+    <button type="button" data-i="1" aria-label="Next matches"></button>
+    <button type="button" data-i="2" aria-label="Highscore"></button>
+  </nav>
+</div>
+<div class="rotate" aria-hidden="true">
+  <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><rect x="19" y="6" width="26" height="46" rx="4"/><path d="M28 46h8"/><path d="M52 18c6 3 8 9 6 15M58 33l-3-4M58 33l4-3"/></svg>
+  <div>Turn your phone sideways</div>
+  <small>The dashboard is made for landscape.</small>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../config.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* Offline copy of 2026, used only when the database is not configured or cannot be reached. */
+  var DEFAULT_2026 = {"id":"2026","label":"2026","order":2026,"title1":"NoA Ignite","title2":"Dart Championship","subtitle":"Compete with the best – 2026 season","intro":"The bracket is set, and it’s time to see who truly rules Floor 1! The tournament officially kicks off on Monday, October 26th. Check the bracket, tag your opponent on Slack, and let the games begin! 🚀🎯","tags":["Classic 501","Floor 1"],"playerCount":28,"names":{"A1a":"Tobias Håkansson","A1b":"Martin Agnälv","A2a":"Roger Stighäll","A2b":"Joseph Dickenson","A3a":"Abdullah Nawaz","A3b":"Kerstin Hampusson","A4a":"Mathias Albrigtsen","A4b":"Arvid Jansson","A5a":"Frida Clauson","A5b":"Anthony Olli","A6a":"Zaid Sumarmad","A6b":"Daniel Ferm","Ab1":"Hugo Feldt","Ab2":"Johanna H. Bjursmarck","B1a":"Olof Bergström","B1b":"Beatrice Sagdahl","B2a":"Jesper Eriksson","B2b":"Adam Kastensson","B3a":"Petter Hägg","B3b":"Jonathan Kinnman","B4a":"Adam Sjödin","B4b":"Damir Dervovic","B5a":"Matilda M.Olofsson","B5b":"Andreas Bleichner","B6a":"Adam Holm","B6b":"Fredrik Lundqvist","Bb1":"Kristina Murray","Bb2":"Pernilla Wikman"},"res":{},"highscore":{"name":"Tobias Håkansson","score":138},"rules":[{"kicker":"Game format","big":"501 · 1v1","text":"Classic 501, one player against one player."},{"kicker":"Booking","big":"Slack","text":"Reach out to your opponent and schedule your game in the dedicated Slack channel."},{"kicker":"Scoring","big":"Whiteboard","text":"When the match is over, register your result on the physical whiteboard next to the dartboard."},{"kicker":"Deadlines","big":"Friday","text":"The deadline to finish Round 1 is Friday. If you’re unable to play this week, please find a substitute player so we can keep the bracket moving."}],"updatedAt":1794911015240};
+
+  function $(s, r) { return (r || document).querySelector(s); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+  /* ---------- Bracket model (same rules as the main page) ---------- */
+  function nextPow2(n) { var p = 4; while (p < n) { p *= 2; } return p; }
+  function clampN(n) { n = parseInt(n, 10); if (isNaN(n)) { n = 4; } return Math.max(4, Math.min(64, n)); }
+  function makeModel(N) {
+    N = clampN(N);
+    var P = nextPow2(N), M1 = P / 4, b = P - N;
+    var byeCount = { A: Math.ceil(b / 2), B: Math.floor(b / 2) };
+    var sides = [];
+    ['A', 'B'].forEach(function (L) {
+      var bc = byeCount[L], real = M1 - bc, n = 1, rounds = [], r1 = [], prev = [], i, id;
+      for (i = 0; i < real; i++) { id = L + (n++); r1.push({ id: id, a: { k: 'n', key: id + 'a' }, b: { k: 'n', key: id + 'b' } }); }
+      rounds.push({ r: 1, matches: r1 });
+      prev = r1.map(function (m) { return { k: 'w', m: m.id }; });
+      for (i = 0; i < bc; i++) { prev.push({ k: 'n', key: L + 'b' + (i + 1), bye: true }); }
+      var r = 2;
+      while (prev.length > 1) {
+        var cur = [];
+        for (i = 0; i < prev.length; i += 2) { id = L + (n++); cur.push({ id: id, a: prev[i], b: prev[i + 1] }); }
+        rounds.push({ r: r, matches: cur });
+        prev = cur.map(function (m) { return { k: 'w', m: m.id }; });
+        r++;
+      }
+      sides.push({ letter: L, rounds: rounds, M1: M1, top: prev[0] });
+    });
+    return {
+      N: N, M1: M1, sides: sides,
+      final: { id: 'F', a: sides[0].top, b: sides[1].top },
+      bronze: { id: 'BR', a: { k: 'l', m: sides[0].top.m }, b: { k: 'l', m: sides[1].top.m } }
+    };
+  }
+  function compute(t) {
+    var M = makeModel(t.playerCount), names = t.names || {}, res = t.res || {}, out = {};
+    function entry(ref) {
+      if (ref.k === 'n') { var nm = String(names[ref.key] || '').trim(); return { name: nm, ph: !nm }; }
+      var src = out[ref.m];
+      if (ref.k === 'w') { return src.wName ? { name: src.wName, ph: false } : { name: '', ph: true }; }
+      return src.lName ? { name: src.lName, ph: false } : { name: '', ph: true };
+    }
+    function run(def) {
+      var a = entry(def.a), b = entry(def.b), rec = res[def.id], ok = false;
+      if (rec && rec.p && rec.p[0] === a.name && rec.p[1] === b.name && !a.ph && !b.ph) { ok = true; }
+      var w = (ok && (rec.w === 'a' || rec.w === 'b')) ? rec.w : '';
+      out[def.id] = { id: def.id, a: a, b: b, w: w, s: ok ? (rec.s || '') : '',
+        wName: w ? (w === 'a' ? a.name : b.name) : '', lName: w ? (w === 'a' ? b.name : a.name) : '' };
+    }
+    M.sides.forEach(function (s) { s.rounds.forEach(function (rd) { rd.matches.forEach(run); }); });
+    run(M.final); run(M.bronze);
+    return { model: M, matches: out, champion: out.F.wName, runnerUp: out.F.lName, third: out.BR.wName };
+  }
+  function roundName(r, K) { return r === K ? 'Semi-final' : r === K - 1 ? 'Quarter-final' : 'Round ' + r; }
+  function roundShort(r, K) { return r === K ? 'Semis' : r === K - 1 ? 'Quarters' : 'Round ' + r; }
+  function hsOf(t) {
+    var h = t.highscore;
+    if (h === undefined && t.id === '2026') { h = DEFAULT_2026.highscore; }
+    if (!h || !h.name) { return null; }
+    var sc = parseInt(h.score, 10);
+    return isNaN(sc) ? null : { name: String(h.name), score: Math.max(0, Math.min(180, sc)) };
+  }
+  function initials(n) {
+    var parts = String(n).trim().split(/\s+/);
+    return parts.length < 2 ? parts[0] : parts[0] + ' ' + parts[parts.length - 1].charAt(0) + '.';
+  }
+  function cardName(n, row) { n = String(n).trim(); return row && n.length > 10 ? initials(n) : shortName(n); }
+  function shortName(n) {
+    n = String(n).trim();
+    if (n.length <= 17) { return n; }
+    var parts = n.split(/\s+/);
+    if (parts.length < 2) { return n.slice(0, 16) + '…'; }
+    return parts[0] + ' ' + parts[parts.length - 1].charAt(0) + '.';
+  }
+
+  /* ---------- Rendering ---------- */
+  function prow(p, st, score) {
+    var label = p.ph ? 'TBD' : '<span class="f">' + esc(p.name) + '</span><span class="s">' + esc(initials(p.name)) + '</span>';
+    return '<div class="p' + (p.ph ? ' ph' : '') + (st ? ' ' + st : '') + '"><span class="n">' + label + '</span>' +
+      (st === 'win' ? '<span class="sc">' + (score ? esc(score) : '✓') + '</span>' : '') + '</div>';
+  }
+  function mhtml(id, comp, inn) {
+    var m = comp.matches[id], wa = m.w === 'a', wb = m.w === 'b';
+    return '<div class="m' + (inn ? ' in' : '') + '">' + prow(m.a, wa ? 'win' : wb ? 'lose' : '', m.s) + prow(m.b, wb ? 'win' : wa ? 'lose' : '', m.s) + '</div>';
+  }
+  function slot(c, span, pos) { return '<div class="slot out' + (pos ? ' ' + pos : '') + '" style="--span:' + span + '">' + c + '</div>'; }
+
+  function sideHtml(side, cls, comp, K) {
+    var cols = '', M1 = side.M1, real = side.rounds[0].matches.length, slots = [], p = 0, i;
+    while (p < M1) {
+      var isBye = p >= real, pos = M1 > 1 ? (p % 2 === 0 ? 'top' : 'bottom') : '';
+      if (isBye && p % 2 === 0 && p + 1 < M1) { slots.push(slot('<div class="byeb">Bye</div>', 2, '')); p += 2; continue; }
+      slots.push(isBye ? slot('<div class="byeb">Bye</div>', 1, pos) : slot(mhtml(side.rounds[0].matches[p].id, comp, false), 1, pos));
+      p++;
+    }
+    cols += '<div class="round"><div class="rt">' + roundShort(1, K) + '</div><div class="slots">' + slots.join('') + '</div></div>';
+    for (i = 1; i < K; i++) {
+      var rd = side.rounds[i], sl = [];
+      rd.matches.forEach(function (m, j) { sl.push(slot(mhtml(m.id, comp, true), Math.pow(2, i), rd.matches.length > 1 ? (j % 2 === 0 ? 'top' : 'bottom') : '')); });
+      cols += '<div class="round"><div class="rt">' + roundShort(i + 1, K) + '</div><div class="slots">' + sl.join('') + '</div></div>';
+    }
+    return '<div class="side ' + cls + '" style="--k:' + K + '">' + cols + '</div>';
+  }
+
+  var TROPHY = '<svg viewBox="0 0 84 96" fill="none" stroke="#FFFF00" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M22 8h40v26a20 20 0 0 1-40 0z"/><path d="M22 14H8c0 14 6 22 16 24"/><path d="M62 14h14c0 14-6 22-16 24"/><path d="M42 54v18"/><path d="M28 88h28"/><path d="M32 72h20v16H32z"/></svg>';
+
+  function center(comp) {
+    var f = comp.matches.F, br = comp.matches.BR;
+    function fm(m, cls, label) {
+      var wa = m.w === 'a', wb = m.w === 'b';
+      return '<div class="m ' + cls + '"><div class="lab">' + label + '</div>' + prow(m.a, wa ? 'win' : wb ? 'lose' : '', m.s) + prow(m.b, wb ? 'win' : wa ? 'lose' : '', m.s) + '</div>';
+    }
+    return '<div class="center"><div class="rt" style="color:#fff">Final</div><div class="cb">' +
+      TROPHY.replace('<svg ', '<svg class="trophy" ') + fm(f, 'final', 'Grand final') + fm(br, 'bronze', 'Bronze') + '</div></div>';
+  }
+
+  function bracketHtml(comp) {
+    var M = comp.model, K = M.sides[0].rounds.length;
+    return '<div class="bk' + (comp.champion ? ' done' : '') + '" style="--rows:' + M.M1 + ';--cols:' + (2 * K + 1.5) + '">' +
+      sideHtml(M.sides[0], 'left', comp, K) + center(comp) + sideHtml(M.sides[1], 'right', comp, K) + '</div>';
+  }
+
+  function progress(comp) {
+    var M = comp.model, K = M.sides[0].rounds.length, total = 0, played = 0, now = '';
+    var ids = [];
+    M.sides.forEach(function (s) { s.rounds.forEach(function (rd) { rd.matches.forEach(function (m) { ids.push({ id: m.id, r: rd.r }); }); }); });
+    ids.push({ id: 'F', r: K + 1 }, { id: 'BR', r: K + 1 });
+    ids.forEach(function (x) { total++; if (comp.matches[x.id].w) { played++; } });
+    for (var r = 1; r <= K && !now; r++) {
+      if (ids.some(function (x) { return x.r === r && !comp.matches[x.id].w; })) { now = roundName(r, K); }
+    }
+    if (!now && !comp.matches.F.w) { now = 'Final'; }
+    if (!now && !comp.matches.BR.w) { now = 'Bronze match'; }
+    return { total: total, played: played, now: now };
+  }
+
+
+  function upcoming(comp) {
+    var M = comp.model, K = M.sides[0].rounds.length, list = [];
+    M.sides.forEach(function (s, si) {
+      s.rounds.forEach(function (rd) { rd.matches.forEach(function (m) { list.push({ r: rd.r, si: si, m: comp.matches[m.id], label: roundName(rd.r, K) }); }); });
+    });
+    list.push({ r: K + 1, si: 2, m: comp.matches.F, label: 'Grand final' }, { r: K + 1, si: 3, m: comp.matches.BR, label: 'Bronze match' });
+    var open = list.filter(function (x) { return !x.m.w; });
+    var ready = open.filter(function (x) { return !x.m.a.ph && !x.m.b.ph; });
+    ready.sort(function (a, b) { return (a.r - b.r) || (a.si - b.si); });
+    return { ready: ready, waiting: open.length - ready.length };
+  }
+  function nextHtml(comp) {
+    var u = upcoming(comp), list = u.ready.slice(0, 8), n = list.length;
+    if (!n) { return ''; }
+    var row = n > 2, cols = row ? 2 : n, rows = Math.ceil(n / cols);
+    var cards = list.map(function (x) {
+      var cls = x.si === 1 ? 'r' : x.si >= 2 ? 'f' : '';
+      return '<div class="mc ' + cls + (row ? ' row' : '') + '"><div class="rl">' + esc(x.label) + '</div><div class="ln"><div class="pl">' + esc(cardName(x.m.a.name, row)) + '</div><div class="vs">VS</div><div class="pl">' + esc(cardName(x.m.b.name, row)) + '</div></div></div>';
+    }).join('');
+    var more = u.ready.length - n;
+    return '<div class="nx"><div class="nx-h"><div class="k">Next matches</div><div class="sub">' + u.ready.length + ' ready to play' +
+      (u.waiting ? ' · ' + u.waiting + ' waiting for earlier results' : '') + (more > 0 ? ' · showing ' + n : '') + '</div></div>' +
+      '<div class="nx-grid" style="--c:' + cols + ';--r:' + rows + '">' + cards + '</div></div>';
+  }
+
+  function hsHtml(t, comp) {
+    var h = hsOf(t), left, right;
+    if (h) {
+      left = '<div class="card"><div class="k">Highscore with three darts</div><div class="score">' + h.score + '<small>pts</small></div>' +
+        '<div class="who">' + esc(h.name) + '</div><div class="bar" role="img" aria-label="' + h.score + ' of 180"><i style="width:' + (h.score / 180 * 100).toFixed(1) + '%"></i></div>' +
+        '<div class="sub">Best three-dart visit. 180 is the maximum.</div></div>';
+    } else {
+      left = '<div class="card"><div class="k">Highscore with three darts</div><div class="who">No highscore yet</div><div class="sub">Nobody has set a record this season.</div></div>';
+    }
+    if (comp.champion) {
+      right = '<div class="card alt">' + TROPHY.replace('<svg ', '<svg class="tro" ') + '<div class="k">Champion</div><div class="bigtxt">' + esc(comp.champion) + '</div>' +
+        '<div class="sub">' + (comp.runnerUp ? 'Runner-up: ' + esc(comp.runnerUp) : '') + (comp.third ? ' · Third: ' + esc(comp.third) : '') + '</div></div>';
+    } else {
+      var pr = progress(comp);
+      right = '<div class="card alt"><div class="k">Tournament progress</div><div class="bigtxt">' + pr.played + '<small> of ' + pr.total + '</small></div>' +
+        '<div class="bar" role="img" aria-label="' + pr.played + ' of ' + pr.total + ' matches played"><i style="width:' + (pr.total ? (pr.played / pr.total * 100).toFixed(1) : 0) + '%"></i></div>' +
+        '<div class="sub">matches played' + (pr.now ? '. Now: ' + esc(pr.now) : '') + '</div></div>';
+    }
+    return '<div class="hs-wrap">' + left + right + '</div>';
+  }
+
+  /* ---------- Data ---------- */
+  var state = { items: {}, currentId: '', lastJson: '', updated: null, live: false };
+  var sb = null, pendingHash = '';
+
+  function sortedIds() { var it = state.items; return Object.keys(it).sort(function (a, b) { return ((it[a].order || 0) - (it[b].order || 0)) || a.localeCompare(b); }); }
+
+  function render() {
+    var t = state.items[state.currentId];
+    if (!t) { return; }
+    var comp = compute(t);
+    $('#s-bracket').innerHTML = bracketHtml(comp);
+    $('#s-next').innerHTML = nextHtml(comp);
+    $('#s-hs').innerHTML = hsHtml(t, comp);
+    syncSlides();
+    var title = ((t.title1 || '') + ' ' + (t.title2 || '')).trim();
+    $('#title').innerHTML = esc(title).replace(/^(\S+)\s+(\S+)/, function (m, a, b) { return a + ' <b>' + b + '</b>'; });
+    var ye = $('#year'); ye.textContent = t.label || t.id;
+    ye.disabled = sortedIds().length < 2; ye.style.cursor = ye.disabled ? 'default' : 'pointer';
+    var live = $('#live'); live.textContent = state.live ? 'Live' : 'Offline copy'; live.className = 'live' + (state.live ? '' : ' off');
+    $('#updated').textContent = state.updated ? 'Updated ' + state.updated : '';
+  }
+
+  function applyRows(rows, isLive) {
+    var items = {};
+    rows.forEach(function (r) {
+      var t = clone(r.data || {});
+      if (t.playerCount && t.names) { t.id = r.id; t.res = t.res || {}; items[r.id] = t; }
+    });
+    if (!Object.keys(items).length) { return; }
+    var json = JSON.stringify(items);
+    var changed = json !== state.lastJson;
+    state.lastJson = json; state.items = items; state.live = isLive;
+    var ids = sortedIds();
+    if (!items[state.currentId]) { state.currentId = items[pendingHash] ? pendingHash : ids[ids.length - 1]; }
+    var d = new Date();
+    state.updated = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    if (changed || !$('#s-bracket').innerHTML) { render(); } else { $('#updated').textContent = 'Updated ' + state.updated; }
+  }
+
+  function loadAll() {
+    if (!sb) { return; }
+    sb.from('tournaments').select('id,data').then(function (r) {
+      if (r.error) { return; }
+      applyRows((r.data || []).map(function (x) { return { id: x.id, data: x.data }; }), true);
+    }).catch(function () { });
+  }
+
+  function init() {
+    try { pendingHash = decodeURIComponent((location.hash || '').slice(1)); } catch (e) { }
+    // Show the offline copy straight away; live data replaces it when it arrives.
+    applyRows([{ id: DEFAULT_2026.id, data: DEFAULT_2026 }], false);
+    var c = window.DART_CONFIG || {};
+    if (c.supabaseUrl && c.supabaseAnonKey && /^https:\/\//.test(c.supabaseUrl) && window.supabase && window.supabase.createClient) {
+      sb = window.supabase.createClient(c.supabaseUrl, c.supabaseAnonKey);
+      loadAll();
+      try {
+        sb.channel('dash-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, function () { loadAll(); }).subscribe();
+      } catch (e) { }
+      setInterval(function () { if (!document.hidden) { loadAll(); } }, 30000);
+    }
+  }
+
+  /* ---------- Rotation, controls, screen ---------- */
+  var slides = [$('#s-bracket'), $('#s-next'), $('#s-hs')], dotEls = document.querySelectorAll('#dots button');
+  var DUR = [25000, 14000, 12000], idx = 0, paused = false, timer = null;
+  var bar = $('#progressBar'), progressEl = $('#progress');
+
+  // The "next matches" slide is skipped when there is nothing to show (e.g. the tournament is finished).
+  function isActive(i) { return i !== 1 || !!$('#s-next').innerHTML; }
+  function syncSlides() {
+    Array.prototype.forEach.call(dotEls, function (d, k) { d.style.display = isActive(k) ? '' : 'none'; });
+    if (!isActive(idx)) { show(0); }
+  }
+  function step(dir) { var i = idx, n = slides.length; do { i = (i + dir + n) % n; } while (!isActive(i)); return i; }
+
+  function show(i) {
+    idx = (i + slides.length) % slides.length;
+    slides.forEach(function (s, k) { s.classList.toggle('on', k === idx); });
+    Array.prototype.forEach.call(dotEls, function (d, k) { d.classList.toggle('on', k === idx); });
+    bar.classList.remove('run'); void bar.offsetWidth;
+    bar.style.setProperty('--dur', DUR[idx] + 'ms');
+    clearTimeout(timer);
+    if (!paused) { bar.classList.add('run'); timer = setTimeout(function () { show(step(1)); }, DUR[idx]); }
+    else { bar.style.width = '0'; }
+  }
+  function setPaused(p) {
+    paused = p;
+    progressEl.classList.toggle('paused', p);
+    $('#pauseIcon').innerHTML = p
+      ? '<path d="M4.5 2.8v10.4L13 8z"/>'
+      : '<rect x="3.5" y="2.5" width="3" height="11" rx="0.8"/><rect x="9.5" y="2.5" width="3" height="11" rx="0.8"/>';
+    $('#pauseBtn').setAttribute('aria-label', p ? 'Resume rotation' : 'Pause rotation');
+    show(idx);
+  }
+  $('#pauseBtn').addEventListener('click', function (e) { e.stopPropagation(); setPaused(!paused); });
+  $('#fsBtn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    try {
+      if (document.fullscreenElement) { document.exitFullscreen(); }
+      else if (document.documentElement.requestFullscreen) { document.documentElement.requestFullscreen(); }
+    } catch (err) { }
+  });
+  $('#dots').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) { show(parseInt(b.getAttribute('data-i'), 10)); } });
+  // Tap the left or right third of the screen to change slide.
+  $('#stage').addEventListener('click', function (e) {
+    var x = e.clientX / window.innerWidth;
+    if (x > 0.66) { show(step(1)); } else if (x < 0.34) { show(step(-1)); } else { setPaused(!paused); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight') { show(step(1)); }
+    else if (e.key === 'ArrowLeft') { show(step(-1)); }
+    else if (e.key === ' ') { e.preventDefault(); setPaused(!paused); }
+    else if (e.key === 'f' || e.key === 'F') { $('#fsBtn').click(); }
+  });
+  $('#year').addEventListener('click', function () {
+    var ids = sortedIds(); if (ids.length < 2) { return; }
+    state.currentId = ids[(ids.indexOf(state.currentId) + 1) % ids.length];
+    try { location.hash = state.currentId; } catch (e) { }
+    render();
+  });
+  window.addEventListener('hashchange', function () {
+    var id = ''; try { id = decodeURIComponent((location.hash || '').slice(1)); } catch (e) { }
+    if (state.items[id] && id !== state.currentId) { state.currentId = id; render(); }
+  });
+
+  // Keep the screen awake while the dashboard is open (TVs and tablets).
+  var wake = null;
+  function keepAwake() {
+    try {
+      if (navigator.wakeLock && !document.hidden) { navigator.wakeLock.request('screen').then(function (l) { wake = l; }, function () { }); }
+    } catch (e) { }
+  }
+  document.addEventListener('visibilitychange', keepAwake);
+
+  init();
+  show(0);
+  keepAwake();
+})();
+</script>
+</body>
+</html>
